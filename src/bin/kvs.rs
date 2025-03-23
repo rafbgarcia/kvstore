@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use kvs::KvStore;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -18,17 +19,21 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
+    let mut kvs = KvStore::new();
 
     match &cli.command {
-        Some(Commands::Set { key: _, value: _ }) => {
+        Some(Commands::Set { key, value }) => {
+            kvs.set(key.to_owned(), value.to_owned());
             panic!("unimplemented");
         }
 
-        Some(Commands::Get { key: _ }) => {
+        Some(Commands::Get { key }) => {
+            kvs.get(key.to_owned());
             panic!("unimplemented");
         }
 
-        Some(Commands::Rm { key: _ }) => {
+        Some(Commands::Rm { key }) => {
+            kvs.remove(key.to_owned());
             panic!("unimplemented");
         }
 
