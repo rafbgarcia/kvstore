@@ -1,14 +1,19 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub struct KvStore {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl KvStore {
+    pub fn new() -> Self {
+        panic!("unimplemented");
+    }
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    pub fn get(self: &Self, _key: String) -> Option<String> {
+        panic!("unimplemented");
+    }
+
+    pub fn set(self: &Self, _key: String, _value: String) -> Self {
+        panic!("unimplemented");
+    }
+
+    pub fn remove(self: &Self, _key: String) -> Self {
+        panic!("unimplemented");
     }
 }

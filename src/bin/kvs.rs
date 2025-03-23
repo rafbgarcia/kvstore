@@ -1,19 +1,39 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about)]
-struct Args {
-    #[arg(short, long)]
-    name: String,
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    name: Option<String>,
 
-    #[arg(short, long, default_value_t = 1)]
-    count: u8,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Set { key: String, value: String },
+    Get { key: String },
+    Rm { key: String },
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    for _ in 0..args.count {
-        println!("Hello {}!", args.name);
+    match &cli.command {
+        Some(Commands::Set { key: _, value: _ }) => {
+            panic!("unimplemented");
+        }
+
+        Some(Commands::Get { key: _ }) => {
+            panic!("unimplemented");
+        }
+
+        Some(Commands::Rm { key: _ }) => {
+            panic!("unimplemented");
+        }
+
+        None => {
+            panic!("unimplemented");
+        }
     }
 }
