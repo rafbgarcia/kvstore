@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use kvs::{KvStore, Result};
+use kvs::{KvStore, KvsError, Result};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -21,22 +21,39 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut kvs = KvStore::open(Path::new("./kvs_wal"))?;
+    let mut kvs = KvStore::open(Path::new("./"))?;
 
     match &cli.command {
         Some(Commands::Set { key, value }) => {
-            let result = kvs.set(key.to_string(), value.to_string())?;
-            Ok(result)
+            kvs.set(key.to_string(), value.to_string())?;
+            Ok(())
         }
 
         Some(Commands::Get { key }) => {
-            // kvs.get(key.to_string());
-            panic!("unimplemented");
+            if let Some(value) = kvs.get(key.to_string())? {
+                println!("{}", value);
+            } else {
+                println!("Key not found");
+            }
+            Ok(())
         }
 
         Some(Commands::Rm { key }) => {
-            // kvs.remove(key.to_string());
-            panic!("unimplemented");
+            match kvs.remove(key.to_string()) {
+                Ok(()) => {}
+
+                Err(KvsError::KeyNotFound) => {
+                    println!("Key not found");
+                    std::process::exit(1);
+                }
+
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+
+            Ok(())
         }
 
         None => {

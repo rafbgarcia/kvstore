@@ -1,60 +1,88 @@
-use std::{
-    fs::{self, File},
-    io::Write,
-    path::Path,
-};
+pub mod error;
+pub use error::KvsError;
 
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Write},
+    path::{Path, PathBuf},
+};
 
-#[derive(Serialize, Deserialize)]
-struct OpSet {
-    key: String,
-    value: String,
-}
+pub type Result<T> = AnyResult<T, KvsError>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum Operation {
     Set { key: String, value: String },
+    Rm { key: String },
 }
 
-pub type Result<T> = AnyResult<T>;
-
 pub struct KvStore {
-    store: std::collections::HashMap<String, String>,
-    file: File,
-    wal: Vec<Operation>,
+    path: PathBuf,
 }
 
 impl KvStore {
-    pub fn open(path: &Path) -> Result<KvStore> {
-        let file = File::options()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(path)?;
-
+    pub fn open(dir_path: &Path) -> Result<KvStore> {
         let kv = KvStore {
-            store: std::collections::HashMap::new(),
-            wal: Vec::new(),
-            file,
+            path: dir_path.to_path_buf(),
         };
 
+        std::fs::create_dir_all(&kv.path)?;
+        match File::create_new(Path::join(&kv.path, "wal")) {
+            _ => {}
+        }
+
         Ok(kv)
+    }
+
+    fn wal_path(&self) -> PathBuf {
+        Path::new(&self.path).join("wal")
+    }
+
+    fn append_to_wal(&self, op: Operation) -> Result<()> {
+        let mut file = File::options().append(true).open(&self.wal_path())?;
+        let serialized_op = serde_json::to_string(&op)?;
+        let line = format!("{}\n", serialized_op);
+
+        file.write(line.as_bytes())?;
+        file.flush()?;
+
+        Ok(())
     }
 
     pub fn get(&self, key: String) -> Result<Option<String>> {
         panic!("unimplemented");
     }
 
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let s = serde_json::to_string(&Operation::Set { key, value })?;
-        self.file.write(&s.as_bytes())?;
+    pub fn set(&self, key: String, value: String) -> Result<()> {
+        self.append_to_wal(Operation::Set { key, value })?;
 
         return Ok(());
     }
 
     pub fn remove(&mut self, key: String) -> Result<()> {
-        panic!("unimplemented");
+        let file = File::open(self.wal_path())?;
+        let reader = BufReader::new(&file);
+        let mut found = false;
+
+        for line in reader.lines() {
+            let operation = serde_json::from_str(&line?)?;
+
+            match operation {
+                Operation::Set { key: k, .. } if key == k => {
+                    found = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        if found {
+            self.append_to_wal(Operation::Rm { key })?;
+
+            Ok(())
+        } else {
+            Err(KvsError::KeyNotFound.into())
+        }
     }
 }
