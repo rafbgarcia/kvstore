@@ -4,9 +4,8 @@ pub use error::KvsError;
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use std::{
-    any::Any,
     fs::File,
-    io::{BufRead, BufReader, Write},
+    io::{BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -18,9 +17,15 @@ enum Operation {
     Rm { key: String },
 }
 
+#[derive(Debug)]
+struct LogPointer {
+    offset: u64,
+    length: u32,
+}
+
 pub struct KvStore {
     path: PathBuf,
-    index: std::collections::HashMap<String, String>,
+    index: std::collections::HashMap<String, LogPointer>,
 }
 
 impl KvStore {
@@ -42,68 +47,92 @@ impl KvStore {
         Path::new(&self.path).join("wal")
     }
 
-    fn append_to_wal(&self, op: Operation) -> Result<()> {
+    fn append_to_wal(&self, op: Operation) -> Result<LogPointer> {
         let mut file = File::options().append(true).open(&self.wal_path())?;
         let serialized_op = serde_json::to_string(&op)?;
-        let line = format!("{}\n", serialized_op);
 
-        file.write(line.as_bytes())?;
-        file.flush()?;
+        let offset = file.seek(SeekFrom::End(0))?;
+        let size = serialized_op.len() as u32;
 
-        Ok(())
+        file.write_all(&size.to_le_bytes())?;
+        file.write_all(serialized_op.as_bytes())?;
+
+        Ok(LogPointer {
+            offset,
+            length: size,
+        })
     }
 
-    fn load_wal(&mut self) -> Result<()> {
+    fn build_index(&mut self) -> Result<()> {
         let file = File::open(self.wal_path())?;
-        let reader = BufReader::new(&file);
+        let mut reader = BufReader::new(&file);
 
-        for line in reader.lines() {
-            let operation = serde_json::from_str(&line?)?;
+        let mut current_offset = 0;
+        let mut length_buf = [0u8; 4];
+
+        while reader.read_exact(&mut length_buf).is_ok() {
+            let length = u32::from_le_bytes(length_buf);
+
+            let mut data = vec![0u8; length as usize];
+            reader.read_exact(&mut data)?;
+
+            let operation = serde_json::from_slice(&data)?;
 
             match operation {
-                Operation::Set { key, value } => {
-                    self.index.insert(key, value);
+                Operation::Set { key, .. } => {
+                    self.index.insert(
+                        key,
+                        LogPointer {
+                            offset: current_offset,
+                            length,
+                        },
+                    );
                 }
+
                 Operation::Rm { key } => {
                     self.index.remove(&key);
                 }
             }
+
+            current_offset += 4 + length as u64;
         }
 
         Ok(())
     }
 
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        self.load_wal()?;
+        self.build_index()?;
 
-        if self.index.contains_key(&key) {
-            return Ok(Some(self.index.get(&key).unwrap().to_string()));
+        if let Some(log_pointer) = self.index.get(&key) {
+            let mut file = File::open(self.wal_path())?;
+            file.seek(SeekFrom::Start(log_pointer.offset + 4))?;
+
+            let mut data = vec![0u8; log_pointer.length as usize];
+            file.read_exact(&mut data)?;
+
+            let operation = serde_json::from_slice(&data)?;
+            if let Operation::Set { value, .. } = operation {
+                return Ok(Some(value));
+            }
         }
+
         return Ok(None);
     }
 
-    pub fn set(&self, key: String, value: String) -> Result<()> {
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
         self.append_to_wal(Operation::Set { key, value })?;
 
         return Ok(());
     }
 
     pub fn remove(&mut self, key: String) -> Result<()> {
-        let file = File::open(self.wal_path())?;
-        let reader = BufReader::new(&file);
+        self.build_index()?;
 
-        for line in reader.lines() {
-            let operation = serde_json::from_str(&line?)?;
-
-            match operation {
-                Operation::Set { key: k, .. } if key == k => {
-                    self.append_to_wal(Operation::Rm { key })?;
-                    return Ok(());
-                }
-                _ => {}
-            }
+        if self.index.contains_key(&key) {
+            self.append_to_wal(Operation::Rm { key })?;
+            Ok(())
+        } else {
+            Err(KvsError::KeyNotFound.into())
         }
-
-        Err(KvsError::KeyNotFound.into())
     }
 }
