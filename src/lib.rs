@@ -4,6 +4,7 @@ pub use error::KvsError;
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 use std::{
+    any::Any,
     fs::File,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
@@ -19,12 +20,14 @@ enum Operation {
 
 pub struct KvStore {
     path: PathBuf,
+    index: std::collections::HashMap<String, String>,
 }
 
 impl KvStore {
     pub fn open(dir_path: &Path) -> Result<KvStore> {
         let kv = KvStore {
             path: dir_path.to_path_buf(),
+            index: std::collections::HashMap::new(),
         };
 
         std::fs::create_dir_all(&kv.path)?;
@@ -50,8 +53,33 @@ impl KvStore {
         Ok(())
     }
 
-    pub fn get(&self, key: String) -> Result<Option<String>> {
-        panic!("unimplemented");
+    fn load_wal(&mut self) -> Result<()> {
+        let file = File::open(self.wal_path())?;
+        let reader = BufReader::new(&file);
+
+        for line in reader.lines() {
+            let operation = serde_json::from_str(&line?)?;
+
+            match operation {
+                Operation::Set { key, value } => {
+                    self.index.insert(key, value);
+                }
+                Operation::Rm { key } => {
+                    self.index.remove(&key);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        self.load_wal()?;
+
+        if self.index.contains_key(&key) {
+            return Ok(Some(self.index.get(&key).unwrap().to_string()));
+        }
+        return Ok(None);
     }
 
     pub fn set(&self, key: String, value: String) -> Result<()> {
@@ -63,26 +91,19 @@ impl KvStore {
     pub fn remove(&mut self, key: String) -> Result<()> {
         let file = File::open(self.wal_path())?;
         let reader = BufReader::new(&file);
-        let mut found = false;
 
         for line in reader.lines() {
             let operation = serde_json::from_str(&line?)?;
 
             match operation {
                 Operation::Set { key: k, .. } if key == k => {
-                    found = true;
-                    break;
+                    self.append_to_wal(Operation::Rm { key })?;
+                    return Ok(());
                 }
                 _ => {}
             }
         }
 
-        if found {
-            self.append_to_wal(Operation::Rm { key })?;
-
-            Ok(())
-        } else {
-            Err(KvsError::KeyNotFound.into())
-        }
+        Err(KvsError::KeyNotFound.into())
     }
 }

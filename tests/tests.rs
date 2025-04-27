@@ -106,13 +106,13 @@ fn cli_rm_stored() -> Result<()> {
         .success()
         .stdout(is_empty());
 
-    // Command::cargo_bin("kvs")
-    //     .unwrap()
-    //     .args(&["get", "key1"])
-    //     .current_dir(&temp_dir)
-    //     .assert()
-    //     .success()
-    //     .stdout(eq("Key not found").trim());
+    Command::cargo_bin("kvs")
+        .unwrap()
+        .args(&["get", "key1"])
+        .current_dir(&temp_dir)
+        .assert()
+        .success()
+        .stdout(eq("Key not found").trim());
 
     Ok(())
 }

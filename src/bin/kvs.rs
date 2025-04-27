@@ -30,11 +30,15 @@ fn main() -> Result<()> {
         }
 
         Some(Commands::Get { key }) => {
-            if let Some(value) = kvs.get(key.to_string())? {
-                println!("{}", value);
-            } else {
-                println!("Key not found");
+            match kvs.get(key.to_string())? {
+                Some(value) => {
+                    println!("{}", value)
+                }
+                None => {
+                    println!("Key not found");
+                }
             }
+
             Ok(())
         }
 
