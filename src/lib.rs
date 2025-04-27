@@ -1,61 +1,60 @@
-#![deny(missing_docs)]
-#![doc = "module"]
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::Path,
+};
 
-/// KvStore is a simple in memory key-value store.
-pub struct KvStore {
-    store: std::collections::HashMap<String, String>,
+use anyhow::Result as AnyResult;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct OpSet {
+    key: String,
+    value: String,
 }
 
-impl Default for KvStore {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Serialize, Deserialize)]
+enum Operation {
+    Set { key: String, value: String },
+}
+
+pub type Result<T> = AnyResult<T>;
+
+pub struct KvStore {
+    store: std::collections::HashMap<String, String>,
+    file: File,
+    wal: Vec<Operation>,
 }
 
 impl KvStore {
-    /// ```rust
-    /// use kvs::KvStore;
-    /// let mut store = KvStore::new();
-    /// ```
-    pub fn new() -> Self {
-        KvStore {
+    pub fn open(path: &Path) -> Result<KvStore> {
+        let file = File::options()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(path)?;
+
+        let kv = KvStore {
             store: std::collections::HashMap::new(),
-        }
+            wal: Vec::new(),
+            file,
+        };
+
+        Ok(kv)
     }
 
-    /// Get the value of a key
-    /// ```rust
-    /// use kvs::KvStore;
-    /// let mut store = KvStore::new();
-    /// store.set("key1".to_owned(), "value1".to_owned());
-    /// store.get("key1".to_owned());
-    /// ```
-    pub fn get(&self, key: String) -> Option<String> {
-        if self.store.contains_key(key.as_str()) {
-            return Some(self.store.get(key.as_str()).unwrap().to_string());
-        }
-
-        None
+    pub fn get(&self, key: String) -> Result<Option<String>> {
+        panic!("unimplemented");
     }
 
-    /// Get the value of a key
-    /// ```rust
-    /// use kvs::KvStore;
-    /// let mut store = KvStore::new();
-    /// store.set("key1".to_owned(), "value1".to_owned());
-    /// ```
-    pub fn set(&mut self, key: String, value: String) {
-        self.store.insert(key, value);
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        let s = serde_json::to_string(&Operation::Set { key, value })?;
+        self.file.write(&s.as_bytes())?;
+
+        return Ok(());
     }
 
-    /// Get the value of a key
-    /// ```rust
-    /// use kvs::KvStore;
-    /// let mut store = KvStore::new();
-    /// store.set("key1".to_owned(), "value1".to_owned());
-    /// store.remove("key1".to_owned());
-    /// ```
-    pub fn remove(&mut self, key: String) {
-        self.store.remove(key.as_str());
+    pub fn remove(&mut self, key: String) -> Result<()> {
+        panic!("unimplemented");
     }
 }

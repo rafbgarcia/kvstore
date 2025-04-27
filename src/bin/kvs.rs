@@ -1,5 +1,7 @@
+use std::path::Path;
+
 use clap::{Parser, Subcommand};
-use kvs::KvStore;
+use kvs::{KvStore, Result};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -17,23 +19,23 @@ enum Commands {
     Rm { key: String },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut kvs = KvStore::new();
+    let mut kvs = KvStore::open(Path::new("./kvs_wal"))?;
 
     match &cli.command {
         Some(Commands::Set { key, value }) => {
-            kvs.set(key.to_owned(), value.to_owned());
-            panic!("unimplemented");
+            let result = kvs.set(key.to_string(), value.to_string())?;
+            Ok(result)
         }
 
         Some(Commands::Get { key }) => {
-            kvs.get(key.to_owned());
+            // kvs.get(key.to_string());
             panic!("unimplemented");
         }
 
         Some(Commands::Rm { key }) => {
-            kvs.remove(key.to_owned());
+            // kvs.remove(key.to_string());
             panic!("unimplemented");
         }
 
