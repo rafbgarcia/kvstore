@@ -30,14 +30,17 @@ pub struct KvStore {
 
 impl KvStore {
     pub fn open(dir_path: &Path) -> Result<KvStore> {
-        let kv = KvStore {
+        let mut kv = KvStore {
             path: dir_path.to_path_buf(),
             index: std::collections::HashMap::new(),
         };
 
         std::fs::create_dir_all(&kv.path)?;
         match File::create_new(Path::join(&kv.path, "wal")) {
-            _ => {}
+            Ok(_) => {}
+            _ => {
+                kv.build_index()?;
+            }
         }
 
         Ok(kv)
@@ -47,20 +50,26 @@ impl KvStore {
         Path::new(&self.path).join("wal")
     }
 
-    fn append_to_wal(&self, op: Operation) -> Result<LogPointer> {
+    fn append_to_wal(&mut self, operation: Operation) -> Result<()> {
         let mut file = File::options().append(true).open(&self.wal_path())?;
-        let serialized_op = serde_json::to_string(&op)?;
+        let serialized_op = serde_json::to_string(&operation)?;
 
         let offset = file.seek(SeekFrom::End(0))?;
-        let size = serialized_op.len() as u32;
+        let length = serialized_op.len() as u32;
 
-        file.write_all(&size.to_le_bytes())?;
+        file.write_all(&length.to_le_bytes())?;
         file.write_all(serialized_op.as_bytes())?;
 
-        Ok(LogPointer {
-            offset,
-            length: size,
-        })
+        match operation {
+            Operation::Rm { key } => {
+                self.index.remove(&key);
+            }
+            Operation::Set { key, .. } => {
+                self.index.insert(key, LogPointer { offset, length });
+            }
+        }
+
+        Ok(())
     }
 
     fn build_index(&mut self) -> Result<()> {
@@ -101,8 +110,6 @@ impl KvStore {
     }
 
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        self.build_index()?;
-
         if let Some(log_pointer) = self.index.get(&key) {
             let mut file = File::open(self.wal_path())?;
             file.seek(SeekFrom::Start(log_pointer.offset + 4))?;
@@ -126,8 +133,6 @@ impl KvStore {
     }
 
     pub fn remove(&mut self, key: String) -> Result<()> {
-        self.build_index()?;
-
         if self.index.contains_key(&key) {
             self.append_to_wal(Operation::Rm { key })?;
             Ok(())
