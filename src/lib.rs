@@ -26,6 +26,7 @@ struct LogPointer {
 pub struct KvStore {
     path: PathBuf,
     index: std::collections::HashMap<String, LogPointer>,
+    op_count: u32,
 }
 
 impl KvStore {
@@ -33,6 +34,7 @@ impl KvStore {
         let mut kv = KvStore {
             path: dir_path.to_path_buf(),
             index: std::collections::HashMap::new(),
+            op_count: 0,
         };
 
         std::fs::create_dir_all(&kv.path)?;
@@ -51,7 +53,13 @@ impl KvStore {
     }
 
     fn append_to_wal(&mut self, operation: Operation) -> Result<()> {
-        let mut file = File::options().append(true).open(&self.wal_path())?;
+        self.append_to_path(operation, self.wal_path())?;
+
+        Ok(())
+    }
+
+    fn append_to_path(&mut self, operation: Operation, path: PathBuf) -> Result<()> {
+        let mut file = File::options().append(true).open(&path)?;
         let serialized_op = serde_json::to_string(&operation)?;
 
         let offset = file.seek(SeekFrom::End(0))?;
@@ -92,7 +100,7 @@ impl KvStore {
                     self.index.insert(
                         key,
                         LogPointer {
-                            offset: current_offset,
+                            offset: current_offset.clone(),
                             length,
                         },
                     );
@@ -128,6 +136,12 @@ impl KvStore {
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         self.append_to_wal(Operation::Set { key, value })?;
+        self.op_count += 1;
+
+        if self.op_count >= 20 {
+            self.compact()?;
+            self.op_count = 0;
+        }
 
         return Ok(());
     }
@@ -139,5 +153,41 @@ impl KvStore {
         } else {
             Err(KvsError::KeyNotFound.into())
         }
+    }
+
+    pub fn compact(&mut self) -> Result<()> {
+        let wal = File::open(self.wal_path())?;
+        let mut reader = BufReader::new(&wal);
+
+        let new_wal_path = Path::join(&self.path, "new_wal");
+        let mut new_wal = File::options()
+            .append(true)
+            .create(true)
+            .open(&new_wal_path)?;
+
+        for (_, log_pointer) in self.index.iter() {
+            reader.seek(SeekFrom::Start(log_pointer.offset + 4))?;
+
+            let mut data = vec![0u8; log_pointer.length as usize];
+            reader.read_exact(&mut data)?;
+
+            let op: Operation = serde_json::from_slice(&data)?;
+
+            new_wal.write_all(&log_pointer.length.to_le_bytes())?;
+            new_wal.write_all(&serde_json::to_string(&op)?.as_bytes())?;
+        }
+
+        std::fs::rename(new_wal_path, self.wal_path())?;
+        self.build_index()?;
+
+        Ok(())
+    }
+
+    fn wal_operation(&self, wal: &mut File, pointer: &LogPointer) -> Result<Vec<u8>> {
+        let mut data = vec![0u8; (pointer.length + 4) as usize];
+        wal.seek(SeekFrom::Start(pointer.offset))?;
+        wal.read_exact(&mut data)?;
+
+        Ok(data)
     }
 }
