@@ -1,7 +1,12 @@
-use std::path::Path;
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+    ops::Deref,
+    path::Path,
+};
 
 use clap::{Parser, Subcommand};
-use kvs::{KvStore, KvsError, Result};
+use kvs::{KvStore, KvsClient, KvsError, Result};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -30,14 +35,10 @@ fn main() -> Result<()> {
         }
 
         Some(Commands::Get { key }) => {
-            match kvs.get(key.to_string())? {
-                Some(value) => {
-                    println!("{}", value)
-                }
-                None => {
-                    println!("Key not found");
-                }
-            }
+            let mut conn = KvsClient::connect("127.0.0.1:4000")?;
+            let value = conn.get(key.to_string())?;
+
+            println!("{}", value);
 
             Ok(())
         }

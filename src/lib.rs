@@ -1,21 +1,16 @@
-pub mod error;
-pub use error::KvsError;
+pub use client::KvsClient;
+pub use common::{KvsError, Operation, Result};
+pub use engines::KvsEngine;
+mod client;
+mod common;
+mod engines;
+mod server;
 
-use anyhow::Result as AnyResult;
-use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
-
-pub type Result<T> = AnyResult<T, KvsError>;
-
-#[derive(Serialize, Deserialize, Debug)]
-enum Operation {
-    Set { key: String, value: String },
-    Rm { key: String },
-}
 
 #[derive(Debug)]
 struct LogPointer {
@@ -75,6 +70,7 @@ impl KvStore {
             Operation::Set { key, .. } => {
                 self.index.insert(key, LogPointer { offset, length });
             }
+            _ => {}
         }
 
         Ok(())
@@ -109,6 +105,8 @@ impl KvStore {
                 Operation::Rm { key } => {
                     self.index.remove(&key);
                 }
+
+                _ => {}
             }
 
             current_offset += 4 + length as u64;
