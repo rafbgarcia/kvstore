@@ -1,9 +1,4 @@
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-    ops::Deref,
-    path::Path,
-};
+use std::path::Path;
 
 use clap::{Parser, Subcommand};
 use kvs::{KvStore, KvsClient, KvsError, Result};
@@ -26,24 +21,25 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut kvs = KvStore::open(Path::new("./"))?;
 
     match &cli.command {
         Some(Commands::Set { key, value }) => {
+            let mut kvs = KvStore::open(Path::new("./"))?;
             kvs.set(key.to_string(), value.to_string())?;
             Ok(())
         }
 
         Some(Commands::Get { key }) => {
-            let mut conn = KvsClient::connect("127.0.0.1:4000")?;
-            let value = conn.get(key.to_string())?;
+            let mut kvs = KvsClient::connect("127.0.0.1:4000")?;
+            let value = kvs.get(key.to_string())?;
 
-            println!("{}", value);
+            println!("{:?}", value);
 
             Ok(())
         }
 
         Some(Commands::Rm { key }) => {
+            let mut kvs = KvStore::open(Path::new("./"))?;
             match kvs.remove(key.to_string()) {
                 Ok(()) => {}
 

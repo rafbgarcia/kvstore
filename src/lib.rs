@@ -1,10 +1,7 @@
 pub use client::KvsClient;
-pub use common::{KvsError, Operation, Result};
-pub use engines::KvsEngine;
+pub use common::{GetResponse, KvsError, Request, Result};
 mod client;
 mod common;
-mod engines;
-mod server;
 
 use std::{
     fs::File,
@@ -47,13 +44,13 @@ impl KvStore {
         Path::new(&self.path).join("wal")
     }
 
-    fn append_to_wal(&mut self, operation: Operation) -> Result<()> {
+    fn append_to_wal(&mut self, operation: Request) -> Result<()> {
         self.append_to_path(operation, self.wal_path())?;
 
         Ok(())
     }
 
-    fn append_to_path(&mut self, operation: Operation, path: PathBuf) -> Result<()> {
+    fn append_to_path(&mut self, operation: Request, path: PathBuf) -> Result<()> {
         let mut file = File::options().append(true).open(&path)?;
         let serialized_op = serde_json::to_string(&operation)?;
 
@@ -64,10 +61,10 @@ impl KvStore {
         file.write_all(serialized_op.as_bytes())?;
 
         match operation {
-            Operation::Rm { key } => {
+            Request::Rm { key } => {
                 self.index.remove(&key);
             }
-            Operation::Set { key, .. } => {
+            Request::Set { key, .. } => {
                 self.index.insert(key, LogPointer { offset, length });
             }
             _ => {}
@@ -92,7 +89,7 @@ impl KvStore {
             let operation = serde_json::from_slice(&data)?;
 
             match operation {
-                Operation::Set { key, .. } => {
+                Request::Set { key, .. } => {
                     self.index.insert(
                         key,
                         LogPointer {
@@ -102,7 +99,7 @@ impl KvStore {
                     );
                 }
 
-                Operation::Rm { key } => {
+                Request::Rm { key } => {
                     self.index.remove(&key);
                 }
 
@@ -124,7 +121,7 @@ impl KvStore {
             file.read_exact(&mut data)?;
 
             let operation = serde_json::from_slice(&data)?;
-            if let Operation::Set { value, .. } = operation {
+            if let Request::Set { value, .. } = operation {
                 return Ok(Some(value));
             }
         }
@@ -133,7 +130,7 @@ impl KvStore {
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.append_to_wal(Operation::Set { key, value })?;
+        self.append_to_wal(Request::Set { key, value })?;
         self.op_count += 1;
 
         if self.op_count >= 20 {
@@ -146,7 +143,7 @@ impl KvStore {
 
     pub fn remove(&mut self, key: String) -> Result<()> {
         if self.index.contains_key(&key) {
-            self.append_to_wal(Operation::Rm { key })?;
+            self.append_to_wal(Request::Rm { key })?;
             Ok(())
         } else {
             Err(KvsError::KeyNotFound.into())
@@ -169,7 +166,7 @@ impl KvStore {
             let mut data = vec![0u8; log_pointer.length as usize];
             reader.read_exact(&mut data)?;
 
-            let op: Operation = serde_json::from_slice(&data)?;
+            let op: Request = serde_json::from_slice(&data)?;
 
             new_wal.write_all(&log_pointer.length.to_le_bytes())?;
             new_wal.write_all(&serde_json::to_string(&op)?.as_bytes())?;
@@ -179,13 +176,5 @@ impl KvStore {
         self.build_index()?;
 
         Ok(())
-    }
-
-    fn wal_operation(&self, wal: &mut File, pointer: &LogPointer) -> Result<Vec<u8>> {
-        let mut data = vec![0u8; (pointer.length + 4) as usize];
-        wal.seek(SeekFrom::Start(pointer.offset))?;
-        wal.read_exact(&mut data)?;
-
-        Ok(data)
     }
 }

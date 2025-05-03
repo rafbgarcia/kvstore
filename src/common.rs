@@ -14,11 +14,16 @@ pub enum KvsError {
     Serde(#[from] serde_json::Error),
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum Operation {
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Request {
     Get { key: String },
     Set { key: String, value: String },
     Rm { key: String },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum GetResponse {
+    Ok(Option<String>),
 }
 
 pub type Result<T> = AnyResult<T, KvsError>;

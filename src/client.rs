@@ -1,27 +1,32 @@
-use crate::{Operation, Result};
-use std::io::{Read, Write};
+use serde::Deserialize;
+
+use crate::{GetResponse, Request, Result};
+use std::io::{BufReader, BufWriter, Write};
 use std::net::TcpStream;
 
 pub struct KvsClient {
-    stream: TcpStream,
+    reader: BufReader<TcpStream>,
+    writer: BufWriter<TcpStream>,
 }
 
 impl KvsClient {
     pub fn connect(addr: &str) -> Result<KvsClient> {
         let stream = TcpStream::connect(addr).expect("Couldn't connect to the server");
 
-        Ok(KvsClient { stream })
+        Ok(KvsClient {
+            reader: BufReader::new(stream.try_clone()?),
+            writer: BufWriter::new(stream),
+        })
     }
 
-    pub fn get(&mut self, key: String) -> Result<String> {
-        let operation = Operation::Get { key };
-        let msg = serde_json::to_vec(&operation)?;
-        self.stream.write(&msg)?;
+    pub fn get(&mut self, key: String) -> Result<GetResponse> {
+        let operation = Request::Get { key };
+        serde_json::to_writer(&mut self.writer, &operation)?;
+        self.writer.flush()?;
 
-        let mut res = [0; 1024];
-        self.stream.read(&mut res).expect("Failed reading response");
-        let val = String::from_utf8_lossy(&res);
+        let mut de = serde_json::de::Deserializer::from_reader(&mut self.reader);
+        let res = GetResponse::deserialize(&mut de)?;
 
-        Ok(val.to_string())
+        Ok(res)
     }
 }

@@ -1,8 +1,10 @@
 use clap::Parser;
-use kvs::Result;
+use kvs::{GetResponse, KvStore, Request, Result};
+use serde::Deserialize;
 use std::{
-    io::Read,
+    io::{BufReader, BufWriter, Write},
     net::{TcpListener, TcpStream},
+    path::Path,
 };
 
 const DEFAULT_ADDR: &str = "127.0.0.1:4000";
@@ -25,18 +27,33 @@ fn main() -> Result<()> {
     println!("Server running on {}", addr);
 
     for stream in listener.incoming() {
-        handle_client(stream?)?;
+        let stream = stream?;
+        println!("Connection received from: {}", &stream.peer_addr()?);
+
+        handle_client(stream)?;
     }
 
     Ok(())
 }
 
-fn handle_client(mut stream: TcpStream) -> Result<()> {
-    let mut req = [0; 1024];
-    stream.read(&mut req)?;
+fn handle_client(stream: TcpStream) -> Result<()> {
+    let reader = BufReader::new(&stream);
+    let mut writer = BufWriter::new(&stream);
 
-    let val = String::from_utf8_lossy(&req);
-    println!("Request: {}", val);
+    let mut de = serde_json::Deserializer::from_reader(reader);
+    let operation = Request::deserialize(&mut de)?;
+
+    let mut kvs = KvStore::open(Path::new("."))?;
+
+    match operation {
+        Request::Get { key } => {
+            let value = kvs.get(key)?;
+            serde_json::to_writer(&mut writer, &GetResponse::Ok(value))?;
+        }
+        _ => {}
+    }
+
+    writer.flush()?;
 
     Ok(())
 }
