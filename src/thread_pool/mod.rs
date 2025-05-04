@@ -2,7 +2,6 @@ use crate::Result;
 pub use naive::NaiveThreadPool;
 pub use rayon::RayonThreadPool;
 pub use shared_queue::SharedQueueThreadPool;
-use std::marker::Send;
 mod naive;
 mod rayon;
 mod shared_queue;
