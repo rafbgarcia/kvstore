@@ -1,7 +1,11 @@
 pub use client::KvsClient;
 pub use common::{GetResponse, KvsError, Request, Result};
+pub use engines::KvsEngine;
+pub use thread_pool::*;
 mod client;
 mod common;
+mod engines;
+pub mod thread_pool;
 
 use std::{
     fs::File,
